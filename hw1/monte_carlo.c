@@ -9,13 +9,14 @@
 
 int main(int argc, char *argv[]) {
 
-    srand(0xAAAAA);
     typedef unsigned long long ull;
 
     int comm_size, id;
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
+
+    srand(0xAAAAA + id);
 
     ull num_hit = 0;
     double x, y;
