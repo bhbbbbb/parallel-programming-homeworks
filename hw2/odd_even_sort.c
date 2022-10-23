@@ -1,13 +1,10 @@
-#define DEBUG
+// #define DEBUG
 // #define BLOCKING
 #define MAXINT 20
 
 #include <stdio.h>
 #include <mpi.h>
 #include <stdlib.h>
-
-#define RANDINT() (rand() % MAXINT)
-#define SWAP(x, y, t) ((t) = (x), (x) = (y), (y) = (t))
 
 #ifndef BLOCKING
 #define BOUND(chunk_size) (chunk_size - 2)
@@ -22,6 +19,16 @@
  * @param prev_id be negative if there is no previous
 */
 int odd_even_sort(int* chunk_arr, int chunk_size, int next_id, int prev_id, int tag);
+
+static inline int randint() {
+    return rand() % MAXINT;
+}
+
+static inline void swap(int *arr, int x, int y) {
+    int tmp = arr[x];
+    arr[x] = arr[y];
+    arr[y] = tmp;
+}
 
 #ifdef DEBUG
 void print_chunk_arr(int id, int* chunk_arr, int chunk_size);
@@ -51,12 +58,17 @@ int main(int argc, char *argv[]) {
     MPI_Bcast(&n, 1, MPI_INT32_T, 0, MPI_COMM_WORLD);
 
     int *chunk_sizes = (int*)malloc(comm_size * sizeof(int));
+    int *displacements = (int*)malloc(comm_size * sizeof(int));
     int *chunk_arr = (int*)malloc(n * sizeof(int));
 
-    for (int i = 0; i < comm_size; i++)
+    int d = 0;
+    for (int i = 0; i < comm_size; i++) {
         chunk_sizes[i] = (n / comm_size) + (int)(i < n % comm_size);
+        displacements[i] = d;
+        d += chunk_sizes[i];
+    }
     
-    for (int i = 0; i < chunk_sizes[id]; i++) chunk_arr[i] = RANDINT();
+    for (int i = 0; i < chunk_sizes[id]; i++) chunk_arr[i] = randint();
 
     #ifdef DEBUG
     for (int i = 0; i < comm_size; i++) {
@@ -83,11 +95,6 @@ int main(int argc, char *argv[]) {
 
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (id == 0) {
-        fprintf(stdout, "--------- results(in %f sec.) ---------------\n", MPI_Wtime() - start_time);
-        fflush(stdout);
-    }
     #ifdef DEBUG
     for (int i = 0; i < comm_size; i++) {
         MPI_Barrier(MPI_COMM_WORLD);
@@ -96,6 +103,20 @@ int main(int argc, char *argv[]) {
     }
     #endif
 
+    int *sorted_arr = (int*)malloc(n * sizeof(int));
+    MPI_Gatherv(
+        chunk_arr, chunk_sizes[id], MPI_INT32_T,
+        sorted_arr, chunk_sizes, displacements, MPI_INT32_T, 0, MPI_COMM_WORLD
+    );
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (id == 0) {
+        fprintf(stdout, "\n--------- results(in %f sec.) ---------------\n", MPI_Wtime() - start_time);
+        fflush(stdout);
+        for (int i = 0; i < n; i++) printf("%d, ", sorted_arr[i]);
+        printf("\n");
+    }
+
+    free(sorted_arr);
     free(chunk_sizes);
     free(chunk_arr);
     MPI_Finalize();
@@ -150,7 +171,7 @@ int odd_even_sort(int* chunk_arr, int chunk_size, int prev_id, int next_id, int 
 
         if (chunk_arr[i] > chunk_arr[i + 1]) {
 
-            SWAP(chunk_arr[i + 1], chunk_arr[i], tem);
+            swap(chunk_arr, i, i + 1);
             sorted = 0;
         }
     }
@@ -160,7 +181,7 @@ int odd_even_sort(int* chunk_arr, int chunk_size, int prev_id, int next_id, int 
 
         if (chunk_arr[i] > chunk_arr[i + 1]) {
 
-            SWAP(chunk_arr[i + 1], chunk_arr[i], tem);
+            swap(chunk_arr, i, i + 1);
             sorted = 0;
         }
     }
@@ -178,7 +199,7 @@ int odd_even_sort(int* chunk_arr, int chunk_size, int prev_id, int next_id, int 
     }
     if (chunk_arr[0] > chunk_arr[1]) {
 
-        SWAP(chunk_arr[0], chunk_arr[1], tem);
+        swap(chunk_arr, 0, 1);
         sorted = 0;
     }
 
@@ -192,7 +213,7 @@ int odd_even_sort(int* chunk_arr, int chunk_size, int prev_id, int next_id, int 
     }
     if (chunk_arr[chunk_size - 2] > chunk_arr[chunk_size - 1]) {
 
-        SWAP(chunk_arr[chunk_size - 2], chunk_arr[chunk_size - 1], tem);
+        swap(chunk_arr, chunk_size - 2, chunk_size - 1);
         sorted = 0;
     }
     #endif
