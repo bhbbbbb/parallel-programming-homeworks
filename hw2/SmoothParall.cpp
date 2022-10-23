@@ -44,7 +44,7 @@ constexpr int H = 0, W = 1;
 /*********************************************************/
 int readBMP(const char *fileName);  // read file
 int saveBMP(const char *fileName);  // save file
-void swap(RGBTRIPLE *a, RGBTRIPLE *b);
+inline void swap(RGBTRIPLE *a, RGBTRIPLE *b);
 RGBTRIPLE **alloc_memory(int Y, int X);  // allocate memory
 void transferBoundaries(int id, int comm_size, RGBTRIPLE **block, int blockHeight);
 
@@ -282,7 +282,7 @@ RGBTRIPLE **alloc_memory(int Y, int X) {
 /*********************************************************/
 /* 交換二個指標                                          */
 /*********************************************************/
-void swap(RGBTRIPLE *a, RGBTRIPLE *b) {
+inline void swap(RGBTRIPLE *a, RGBTRIPLE *b) {
     RGBTRIPLE *temp;
     temp = a;
     a = b;
