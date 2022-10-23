@@ -46,7 +46,10 @@ int readBMP(const char *fileName);  // read file
 int saveBMP(const char *fileName);  // save file
 void swap(RGBTRIPLE *a, RGBTRIPLE *b);
 RGBTRIPLE **alloc_memory(int Y, int X);  // allocate memory
-void transferBoundaries(int id, int comm_size, RGBTRIPLE **block, int blockHeight);
+void transferBoundaries(
+    int id, int comm_size, RGBTRIPLE **block, int blockHeight, MPI_Request* req_buff
+);
+inline void bmpSmoothing(int rowIdx, int blockHeight, int width);
 
 int main(int argc, char *argv[]) {
     /*********************************************************/
@@ -65,8 +68,6 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
 
-    //記錄開始時間
-    startTime = MPI_Wtime();
 
     //讀取檔案
     MPI_Datatype mpi_bmpShape;
@@ -81,6 +82,13 @@ int main(int argc, char *argv[]) {
         else
             cout << "Read file fails!!" << endl;
 
+    }
+    
+    //記錄開始時間
+    MPI_Barrier(MPI_COMM_WORLD);
+    startTime = MPI_Wtime();
+
+    if (id == 0) {
         // broadcast image's shape to other processes.
         bmpShape[H] = bmpInfo.biHeight;
         bmpShape[W] = bmpInfo.biWidth;
@@ -107,41 +115,40 @@ int main(int argc, char *argv[]) {
         displacements[i] = d;
         d += sendcounts[i];
     }
+
+    // a block includes top and buttom boudaries
+    int blockHeight = sendcounts[id] + 2;
     
     if (id != 0) {
-        BMPData = alloc_memory(sendcounts[id] + 2, bmpShape[W]);
-        BMPSaveData = alloc_memory(sendcounts[id] + 2, bmpShape[W]);
+        BMPData = alloc_memory(blockHeight, bmpShape[W]);
+        BMPSaveData = alloc_memory(blockHeight, bmpShape[W]);
     }
-    else swap(BMPSaveData, BMPData);
+
     // preserve one row for boundary
     MPI_Scatterv(
-        *BMPData, sendcounts, displacements, mpi_rgbTripleRow,
-        *(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
+        *BMPSaveData, sendcounts, displacements, mpi_rgbTripleRow,
+        *(&BMPData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
     );
 
+    MPI_Request req_buff[4];
     //進行多次的平滑運算
     for (int count = 0; count < NSmooth; count++) {
 
-        transferBoundaries(id, comm_size, BMPSaveData, sendcounts[id] + 2);
+        // non-blocking transfer
+        transferBoundaries(id, comm_size, BMPData, blockHeight, req_buff);
+
+        // do smoothing calculation but omit the rows that need boundary data.
+        for (int i = 2; i < blockHeight - 2; i++)
+            bmpSmoothing(i, blockHeight, bmpShape[W]);
+
+        for (int i = 0; i < 4; i++) MPI_Wait(&req_buff[i], MPI_STATUS_IGNORE);
+
+        // do the rest parts
+        bmpSmoothing(1, blockHeight, bmpShape[W]);
+        bmpSmoothing(blockHeight - 2, blockHeight, bmpShape[W]);
+
         //把像素資料與暫存指標做交換
-        swap(BMPSaveData, BMPData);
-        //進行平滑運算
-        for (int i = 1; i < sendcounts[id] + 1; i++)
-            for (int j = 0; j < bmpShape[W]; j++) {
-                /*********************************************************/
-                /*設定上下左右像素的位置                                 */
-                /*********************************************************/
-                int Top = i > 0 ? i - 1 : sendcounts[id] + 2 - 1;
-                int Down = i < sendcounts[id] + 2 - 1 ? i + 1 : 0;
-                int Left = j > 0 ? j - 1 : bmpShape[W] - 1;
-                int Right = j < bmpShape[W] - 1 ? j + 1 : 0;
-                /*********************************************************/
-                /*與上下左右像素做平均，並四捨五入                       */
-                /*********************************************************/
-                BMPSaveData[i][j].rgbBlue = (double)(BMPData[i][j].rgbBlue + BMPData[Top][j].rgbBlue + BMPData[Top][Left].rgbBlue + BMPData[Top][Right].rgbBlue + BMPData[Down][j].rgbBlue + BMPData[Down][Left].rgbBlue + BMPData[Down][Right].rgbBlue + BMPData[i][Left].rgbBlue + BMPData[i][Right].rgbBlue) / 9 + 0.5;
-                BMPSaveData[i][j].rgbGreen = (double)(BMPData[i][j].rgbGreen + BMPData[Top][j].rgbGreen + BMPData[Top][Left].rgbGreen + BMPData[Top][Right].rgbGreen + BMPData[Down][j].rgbGreen + BMPData[Down][Left].rgbGreen + BMPData[Down][Right].rgbGreen + BMPData[i][Left].rgbGreen + BMPData[i][Right].rgbGreen) / 9 + 0.5;
-                BMPSaveData[i][j].rgbRed = (double)(BMPData[i][j].rgbRed + BMPData[Top][j].rgbRed + BMPData[Top][Left].rgbRed + BMPData[Top][Right].rgbRed + BMPData[Down][j].rgbRed + BMPData[Down][Left].rgbRed + BMPData[Down][Right].rgbRed + BMPData[i][Left].rgbRed + BMPData[i][Right].rgbRed) / 9 + 0.5;
-            }
+        if (count != NSmooth - 1) swap(BMPSaveData, BMPData);
     }
 
     MPI_Gatherv(
@@ -149,6 +156,14 @@ int main(int argc, char *argv[]) {
         *BMPData, sendcounts, displacements, mpi_rgbTripleRow, 0, MPI_COMM_WORLD
     );
     swap(BMPData, BMPSaveData);
+
+    //得到結束時間，並印出執行時間
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (id == 0) {
+        endwtime = MPI_Wtime();
+        cout << "The execution time = " << endwtime - startTime << endl ;
+    }
+
     //寫入檔案
     if (id == 0) {
         if (saveBMP(outfileName))
@@ -158,11 +173,6 @@ int main(int argc, char *argv[]) {
     }
 
 
-    //得到結束時間，並印出執行時間
-    if (id == 0) {
-        endwtime = MPI_Wtime();
-        cout << "The execution time = " << endwtime - startTime << endl ;
-    }
 
     delete[] sendcounts;
     delete[] displacements;
@@ -289,14 +299,36 @@ void swap(RGBTRIPLE *a, RGBTRIPLE *b) {
     b = temp;
 }
 
-void transferBoundaries(int id, int comm_size, RGBTRIPLE **block, int blockHeight) {
+void transferBoundaries(
+    int id, int comm_size, RGBTRIPLE **block, int blockHeight,
+    MPI_Request *req_buff
+) {
 
     int next_id = (id + 1) % comm_size;
     int prev_id = (id + comm_size - 1) % comm_size;
 
-    MPI_Send(*(&block[1]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD);
-    MPI_Send(*(&block[blockHeight - 2]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD);
-    MPI_Recv(*(&block[0]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(*(&block[blockHeight - 1]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Isend(*(&block[1]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD, &req_buff[0]);
+    MPI_Isend(*(&block[blockHeight - 2]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, &req_buff[1]);
+    MPI_Irecv(*(&block[0]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD, &req_buff[2]);
+    MPI_Irecv(*(&block[blockHeight - 1]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, &req_buff[3]);
 }
 
+
+inline void bmpSmoothing(int rowIdx, int blockHeight, int width) {
+
+    for (int j = 0; j < width; j++) {
+        /*********************************************************/
+        /*設定上下左右像素的位置                                 */
+        /*********************************************************/
+        int Top = rowIdx > 0 ? rowIdx - 1 : blockHeight - 1;
+        int Down = rowIdx < blockHeight - 1 ? rowIdx + 1 : 0;
+        int Left = j > 0 ? j - 1 : width - 1;
+        int Right = j < width - 1 ? j + 1 : 0;
+        /*********************************************************/
+        /*與上下左右像素做平均，並四捨五入                       */
+        /*********************************************************/
+        BMPSaveData[rowIdx][j].rgbBlue = (double)(BMPData[rowIdx][j].rgbBlue + BMPData[Top][j].rgbBlue + BMPData[Top][Left].rgbBlue + BMPData[Top][Right].rgbBlue + BMPData[Down][j].rgbBlue + BMPData[Down][Left].rgbBlue + BMPData[Down][Right].rgbBlue + BMPData[rowIdx][Left].rgbBlue + BMPData[rowIdx][Right].rgbBlue) / 9 + 0.5;
+        BMPSaveData[rowIdx][j].rgbGreen = (double)(BMPData[rowIdx][j].rgbGreen + BMPData[Top][j].rgbGreen + BMPData[Top][Left].rgbGreen + BMPData[Top][Right].rgbGreen + BMPData[Down][j].rgbGreen + BMPData[Down][Left].rgbGreen + BMPData[Down][Right].rgbGreen + BMPData[rowIdx][Left].rgbGreen + BMPData[rowIdx][Right].rgbGreen) / 9 + 0.5;
+        BMPSaveData[rowIdx][j].rgbRed = (double)(BMPData[rowIdx][j].rgbRed + BMPData[Top][j].rgbRed + BMPData[Top][Left].rgbRed + BMPData[Top][Right].rgbRed + BMPData[Down][j].rgbRed + BMPData[Down][Left].rgbRed + BMPData[Down][Right].rgbRed + BMPData[rowIdx][Left].rgbRed + BMPData[rowIdx][Right].rgbRed) / 9 + 0.5;
+    }
+}
