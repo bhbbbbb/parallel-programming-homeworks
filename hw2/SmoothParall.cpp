@@ -32,6 +32,7 @@ constexpr const int BLOCK_LENGTH[3] = {1, 1, 1};
 constexpr const MPI_Aint BLOCK_DISPLACEMENTS[3] = {0, 1, 2};
 constexpr const MPI_Datatype BLOCK_TYPES[3] = {MPI_BYTE, MPI_BYTE, MPI_BYTE};
 
+// indexer for bmpShape
 constexpr int H = 0, W = 1;
 
 /*********************************************************/
@@ -93,6 +94,7 @@ int main(int argc, char *argv[]) {
     }
 
 
+    // create type mpi_rgnTripleRow
     MPI_Type_create_struct(3, BLOCK_LENGTH, BLOCK_DISPLACEMENTS, BLOCK_TYPES, &mpi_rgbTriple);
     MPI_Type_contiguous(bmpShape[W], mpi_rgbTriple, &mpi_rgbTripleRow);
     MPI_Type_commit(&mpi_rgbTripleRow);
@@ -117,8 +119,6 @@ int main(int argc, char *argv[]) {
         *(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
     );
 
-
-        transferBoundaries(id, comm_size, BMPSaveData, sendcounts[id] + 2);
     //進行多次的平滑運算
     for (int count = 0; count < NSmooth; count++) {
 
