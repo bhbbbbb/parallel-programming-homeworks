@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <ctime>
 
 #include "bmp.h"
 
@@ -61,6 +62,7 @@ int main(int argc, char *argv[]) {
     else
         cout << "Read file fails!!" << endl;
 
+    clock_t startTime = clock();
     //動態分配記憶體給暫存空間
     BMPData = alloc_memory(bmpInfo.biHeight, bmpInfo.biWidth);
 
@@ -87,15 +89,16 @@ int main(int argc, char *argv[]) {
             }
     }
 
+    //得到結束時間，並印出執行時間
+    cout << "The execution time = "
+	    << (clock() - startTime) / (double)CLOCKS_PER_SEC <<endl ;
+    
     //寫入檔案
     if (saveBMP(outfileName))
         cout << "Save file successfully!!" << endl;
     else
         cout << "Save file fails!!" << endl;
 
-    //得到結束時間，並印出執行時間
-    // endwtime = MPI_Wtime();
-    // cout << "The execution time = "<< endwtime-startwtime <<endl ;
 
     free(BMPData[0]);
     free(BMPSaveData[0]);

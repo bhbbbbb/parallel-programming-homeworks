@@ -113,16 +113,21 @@ int main(int argc, char *argv[]) {
         BMPSaveData = alloc_memory(sendcounts[id] + 2, bmpShape[W]);
     }
     else swap(BMPSaveData, BMPData);
+
     // preserve one row for boundary
-    MPI_Scatterv(
-        *BMPData, sendcounts, displacements, mpi_rgbTripleRow,
-        *(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
-    );
+    if (comm_size > 1)
+	    MPI_Scatterv(
+		*BMPData, sendcounts, displacements, mpi_rgbTripleRow,
+		*(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow,
+		0, MPI_COMM_WORLD
+	    );
+    else swap(BMPSaveData, BMPData);
 
     //進行多次的平滑運算
     for (int count = 0; count < NSmooth; count++) {
 
-        transferBoundaries(id, comm_size, BMPSaveData, sendcounts[id] + 2);
+	if (comm_size > 1)
+	    transferBoundaries(id, comm_size, BMPSaveData, sendcounts[id] + 2);
         //把像素資料與暫存指標做交換
         swap(BMPSaveData, BMPData);
         //進行平滑運算

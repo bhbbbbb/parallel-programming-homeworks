@@ -1,5 +1,6 @@
 // #define DEBUG
-// #define BLOCKING
+#define BLOCKING
+// #define OUTPUT
 #define MAXINT 20
 
 #include <stdio.h>
@@ -112,7 +113,9 @@ int main(int argc, char *argv[]) {
     if (id == 0) {
         fprintf(stdout, "\n--------- results(in %f sec.) ---------------\n", MPI_Wtime() - start_time);
         fflush(stdout);
+#ifdef OUTPUT
         for (int i = 0; i < n; i++) printf("%d, ", sorted_arr[i]);
+#endif
         printf("\n");
     }
 
