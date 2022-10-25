@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
     }
 
     // a block includes top and buttom boudaries
-    int blockHeight = sendcounts[id] + 2;
+    int blockHeight = comm_size > 1 ? sendcounts[id] + 2 : sendcounts[id];
     
     if (id != 0) {
         BMPData = alloc_memory(blockHeight, bmpShape[W]);
@@ -125,37 +125,57 @@ int main(int argc, char *argv[]) {
     }
 
     // preserve one row for boundary
-    MPI_Scatterv(
-        *BMPSaveData, sendcounts, displacements, mpi_rgbTripleRow,
-        *(&BMPData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
-    );
+    if (comm_size > 1)
+        MPI_Scatterv(
+            *BMPSaveData, sendcounts, displacements, mpi_rgbTripleRow,
+            *(&BMPData[1]), sendcounts[id], mpi_rgbTripleRow, 0, MPI_COMM_WORLD
+        );
+    else swap(BMPData, BMPSaveData);
 
-    MPI_Request req_buff[4];
-    //進行多次的平滑運算
-    for (int count = 0; count < NSmooth; count++) {
+    if (comm_size > 1) {
+        MPI_Request req_buff[4];
+        //進行多次的平滑運算
+        for (int count = 0; count < NSmooth; count++) {
 
-        // non-blocking transfer
-        transferBoundaries(id, comm_size, BMPData, blockHeight, req_buff);
+            // non-blocking transfer
+            transferBoundaries(id, comm_size, BMPData, blockHeight, req_buff);
 
-        // do smoothing calculation but omit the rows that need boundary data.
-        for (int i = 2; i < blockHeight - 2; i++)
-            bmpSmoothing(i, blockHeight, bmpShape[W]);
+            // do smoothing calculation but omit the rows that need boundary data.
+            for (int i = 2; i < blockHeight - 2; i++)
+                bmpSmoothing(i, blockHeight, bmpShape[W]);
 
-        for (int i = 0; i < 4; i++) MPI_Wait(&req_buff[i], MPI_STATUS_IGNORE);
+            for (int i = 0; i < 4; i++) MPI_Wait(&req_buff[i], MPI_STATUS_IGNORE);
 
-        // do the rest parts
-        bmpSmoothing(1, blockHeight, bmpShape[W]);
-        bmpSmoothing(blockHeight - 2, blockHeight, bmpShape[W]);
+            // do the rest parts
+            bmpSmoothing(1, blockHeight, bmpShape[W]);
+            bmpSmoothing(blockHeight - 2, blockHeight, bmpShape[W]);
 
-        //把像素資料與暫存指標做交換
-        if (count != NSmooth - 1) swap(BMPSaveData, BMPData);
+            //把像素資料與暫存指標做交換
+            if (count != NSmooth - 1) swap(BMPSaveData, BMPData);
+        }
     }
 
-    MPI_Gatherv(
-        *(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow,
-        *BMPData, sendcounts, displacements, mpi_rgbTripleRow, 0, MPI_COMM_WORLD
-    );
-    swap(BMPData, BMPSaveData);
+    else {
+        //進行多次的平滑運算
+        for (int count = 0; count < NSmooth; count++) {
+
+            // do smoothing calculation but omit the rows that need boundary data.
+            for (int i = 0; i < blockHeight; i++)
+                bmpSmoothing(i, blockHeight, bmpShape[W]);
+
+            //把像素資料與暫存指標做交換
+            if (count != NSmooth - 1) swap(BMPSaveData, BMPData);
+        }
+
+    }
+
+    if (comm_size > 1) {
+        MPI_Gatherv(
+            *(&BMPSaveData[1]), sendcounts[id], mpi_rgbTripleRow,
+            *BMPData, sendcounts, displacements, mpi_rgbTripleRow, 0, MPI_COMM_WORLD
+        );
+        swap(BMPData, BMPSaveData);
+    }
 
     //得到結束時間，並印出執行時間
     MPI_Barrier(MPI_COMM_WORLD);
