@@ -1,7 +1,7 @@
 // #define DEBUG
-#define BLOCKING
-// #define OUTPUT
-#define MAXINT 20
+// #define BLOCKING
+#define OUTPUT
+#define MAXINT RAND_MAX
 
 #include <stdio.h>
 #include <mpi.h>
