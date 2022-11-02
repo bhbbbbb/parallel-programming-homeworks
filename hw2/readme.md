@@ -1,5 +1,13 @@
 ## Image Smooth
 
+## Known Bugs
+
+- `SmoothParall.cpp`
+    - wrong output when `comm_size = 2`
+    - cannot run when `comm_size = 1`
+
+----
+
 The target is to do image smoothing parallelly. Therefore, here we first split the image in to rows and do the distributed calculation.
 
 After calculation, process 0 gathers scattered image chunks and regroups.
