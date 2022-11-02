@@ -327,9 +327,9 @@ void transferBoundaries(
     int prev_id = (id + comm_size - 1) % comm_size;
 
     MPI_Isend(*(&block[1]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD, &req_buff[0]);
-    MPI_Isend(*(&block[blockHeight - 2]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, &req_buff[1]);
-    MPI_Irecv(*(&block[0]), 1, mpi_rgbTripleRow, prev_id, 0, MPI_COMM_WORLD, &req_buff[2]);
-    MPI_Irecv(*(&block[blockHeight - 1]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, &req_buff[3]);
+    MPI_Irecv(*(&block[blockHeight - 1]), 1, mpi_rgbTripleRow, next_id, 0, MPI_COMM_WORLD, &req_buff[1]);
+    MPI_Isend(*(&block[blockHeight - 2]), 1, mpi_rgbTripleRow, next_id, 1, MPI_COMM_WORLD, &req_buff[2]);
+    MPI_Irecv(*(&block[0]), 1, mpi_rgbTripleRow, prev_id, 1, MPI_COMM_WORLD, &req_buff[3]);
 }
 
 
