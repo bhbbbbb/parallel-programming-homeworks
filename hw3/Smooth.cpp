@@ -29,7 +29,7 @@ RGBTRIPLE **BMPSaveData = NULL;
 RGBTRIPLE **BMPData = NULL;
 int num_thread;
 int counter;
-sem_t barrier_sem;
+sem_t barrier_sems[2];
 pthread_mutex_t counter_mutex;
 
 
@@ -70,7 +70,10 @@ int main(int argc, char *argv[]) {
     std::swap(BMPData, BMPSaveData);
     std::vector<pthread_t> threads(num_thread);
     pthread_mutex_init(&counter_mutex, NULL);
-    sem_init(&barrier_sem, 1, 0);
+
+    for (auto& barrier_sem : barrier_sems)
+        sem_init(&barrier_sem, 1, 0);
+
     counter = 0;
     // *********** shared variables initialization ***************
 
@@ -83,7 +86,7 @@ int main(int argc, char *argv[]) {
     //得到結束時間，並印出執行時間
     std::chrono::duration<double> duration = std::chrono::system_clock::now() - start_time;
     std::cout << "The execution time = " << duration.count() << std::endl ;
-    std::printf("n = %d, time = %d s", num_thread, duration.count());
+    std::printf("n = %d, time = %f s", num_thread, duration.count());
     
     //寫入檔案
     if (saveBMP(outfileName))
@@ -97,7 +100,8 @@ int main(int argc, char *argv[]) {
     free(BMPData);
     free(BMPSaveData);
     pthread_mutex_destroy(&counter_mutex);
-    sem_destroy(&barrier_sem);
+    for (auto& barrier_sem : barrier_sems)
+        sem_destroy(&barrier_sem);
     return 0;
 }
 
@@ -241,7 +245,7 @@ void* multi_smooth(void* arg) {
 
             counter++;
             pthread_mutex_unlock(&counter_mutex);
-            sem_wait(&barrier_sem);
+            sem_wait(&barrier_sems[count & 1]);
         }
 
         else {
@@ -251,7 +255,7 @@ void* multi_smooth(void* arg) {
 
             if (count < NSmooth - 1) std::swap(BMPSaveData, BMPData);
             for (int i = 0; i < num_thread - 1; i++)
-                sem_post(&barrier_sem);
+                sem_post(&barrier_sems[count & 1]);
         }
     }
 
