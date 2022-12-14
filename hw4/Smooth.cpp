@@ -231,7 +231,6 @@ void* multi_smooth(void* arg) {
 
     long rank = reinterpret_cast<long>(arg);
 
-    // std::printf("rank = %ld\n", rank);
     //進行多次的平滑運算
     for (int count = 0; count < NSmooth; count++) {
         //把像素資料與暫存指標做交換
@@ -240,7 +239,6 @@ void* multi_smooth(void* arg) {
 
         pthread_mutex_lock(&counter_mutex);
 
-        // if (rank == 0) std::printf("%ld) counter = %d, count = %d\n", rank, counter, count);
         if (counter < num_thread - 1) {
 
             counter++;
