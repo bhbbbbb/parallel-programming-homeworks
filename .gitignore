@@ -4,3 +4,6 @@
 *.obj
 hosts
 bin
+*.txt
+*.sh
+*.bmp
