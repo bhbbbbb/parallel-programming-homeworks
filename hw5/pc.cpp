@@ -14,7 +14,7 @@
 #include <dirent.h>
 
 constexpr int LINE_BUFF_MAX = 1024;
-constexpr bool PRINT_RESULT = false;
+constexpr bool PRINT_RESULT = true;
 
 const auto END_TOKEN = std::string("\n");
 

@@ -3,9 +3,6 @@
 #include <omp.h>
 #include <assert.h>
 
-#define NUM_TO_SORT 100000
-#define MAX_RAND_INT 10
-
 void count_sort(const int* a, int n, int* out_arr, int num_threads) {
 
     int count;
@@ -33,29 +30,36 @@ int main(int argc, char** argv) {
     srand(0xAAAA);
 
     int num_threads = argc < 2 ? omp_get_max_threads() : atoi(argv[1]);
+    int num_to_sort = argc < 3 ? 100 : atoi(argv[2]);
+    int max_num = argc < 4 ? 10 : atoi(argv[3]);
 
-    int arr[NUM_TO_SORT], out[NUM_TO_SORT];
+    // int arr[num_to_sort], out[num_to_sort];
+    int* arr = (int*)malloc(sizeof(int) * num_to_sort);
+    int* out = (int*)malloc(sizeof(int) * num_to_sort);
 
-    for (int i = 0; i < NUM_TO_SORT; i++) arr[i] = rand() % MAX_RAND_INT;
+    for (int i = 0; i < num_to_sort; i++) arr[i] = rand() % max_num;
 
     double count_time, qsort_time; 
 
     count_time = omp_get_wtime();
-    count_sort(arr, sizeof(out) / sizeof(int), out, num_threads);
+    count_sort(arr, num_to_sort, out, num_threads);
     count_time = omp_get_wtime() - count_time;
 
     qsort_time = omp_get_wtime();
-    qsort(arr, sizeof(arr) / sizeof(int), sizeof(int), cmp);
+    qsort(arr, num_to_sort, sizeof(int), cmp);
     qsort_time = omp_get_wtime() - qsort_time;
 
-    printf("num_threads = %d, n = %d\n", num_threads, NUM_TO_SORT);
+    printf("num_threads = %d, n = %d\n", num_threads, num_to_sort);
     printf("count_sort: %lf s.\nqsort: %lf s.\n", count_time, qsort_time);
 
-    for (int i = 0; i < NUM_TO_SORT; i++) {
+    for (int i = 0; i < num_to_sort; i++) {
         assert(arr[i] == out[i]);
+        printf("%d, ", arr[i]);
     }
 
     printf("\n");
+    free(arr);
+    free(out);
 
     return 0;
 }
