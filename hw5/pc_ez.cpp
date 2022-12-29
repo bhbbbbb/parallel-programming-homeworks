@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <vector>
 #include <unordered_map>
+#include <map>
 #include <omp.h>
 
 #include <dirent.h>
@@ -97,7 +98,7 @@ void read_input_file(const std::string& file_name, Queue& queue) {
 }
 
 
-void tokenize(Queue& queue, std::unordered_map<std::string, int>& buckets);
+void tokenize(Queue& queue, std::map<std::string, int>& buckets);
 
 int main(int argc, char** argv) {
 
@@ -114,7 +115,7 @@ int main(int argc, char** argv) {
     std::printf("num_threads = %d, num_consumers = %d\n", num_threads, num_consumers);
 
     Queue queue;
-    std::unordered_map<std::string, int> buckets;
+    std::map<std::string, int> buckets;
 
     
     auto start_time = omp_get_wtime();
@@ -153,7 +154,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-void tokenize(Queue& queue, std::unordered_map<std::string, int>& buckets) {
+void tokenize(Queue& queue, std::map<std::string, int>& buckets) {
 
     const std::string BLANK("++ ++");
     std::string line, str;

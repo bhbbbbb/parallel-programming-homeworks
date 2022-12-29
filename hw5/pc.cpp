@@ -6,6 +6,7 @@
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
+#include <map>
 #include <cstring>
 #include <vector>
 #include <omp.h>
@@ -127,7 +128,7 @@ inline bool is_all_true(std::vector<bool>& flags) {
 }
 
 
-void tokenize(Queue& queue, std::unordered_map<std::string, int>& buckets);
+void tokenize(Queue& queue, std::map<std::string, int>& buckets);
 
 int main(int argc, char** argv) {
 
@@ -144,7 +145,7 @@ int main(int argc, char** argv) {
     std::printf("num_threads = %d, num_consumers = %d\n", num_threads, num_consumers);
 
     Queue queue;
-    std::unordered_map<std::string, int> buckets;
+    std::map<std::string, int> buckets;
 
     std::vector<bool> complete_flags(num_consumers, false);
     
@@ -181,7 +182,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-void tokenize(Queue& queue, std::unordered_map<std::string, int>& buckets) {
+void tokenize(Queue& queue, std::map<std::string, int>& buckets) {
 
 
     std::string line, str;
