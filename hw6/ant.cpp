@@ -1,7 +1,6 @@
 #include <vector>
 #include <memory>
 #include <omp.h>
-#include <climits>
 #include <mpi.h>
 
 #include "ant.h"
@@ -54,19 +53,11 @@ int main(int argc, char** argv) {
         firstprivate(ants, pheromone)
     {
         int t_id = omp_get_thread_num();
-        // int current_local_best = INT32_MAX;
 
         for (int i = 0; i < num_colonies; i++) {
 
             thread_task(ants, pheromone, dis_table, local_best_route);
 
-            // if (found_best < current_local_best) current_local_best = found_best;
-
-            // if (
-            //     i % DROPOUT_INTERVAL == 0
-            //     && current_local_best > local_best_route->get_length()
-            // )
-            //     pheromone.dropout();
 
             #pragma omp master
             if (i % GLOBAL_EXANGE_INTERVAL == 0 || i == num_colonies - 1) {
