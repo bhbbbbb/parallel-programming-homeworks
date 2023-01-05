@@ -32,9 +32,10 @@ int main(int argc, char** argv) {
 
     int num_threads = parse_args(p_id, argc, argv);
 
+    Matrix dis_table(argv[1]);
     // Matrix dis_table("cities/gr17_d.txt");
     // Matrix dis_table("cities/fri26_d.txt");
-    Matrix dis_table("cities/dantzig42_d.txt");
+    // Matrix dis_table("cities/dantzig42_d.txt");
     // Matrix dis_table("cities/att48_d.txt");
 
     int num_cities = dis_table.length();
@@ -53,7 +54,7 @@ int main(int argc, char** argv) {
         firstprivate(ants, pheromone)
     {
         int t_id = omp_get_thread_num();
-        int current_local_best = INT32_MAX;
+        // int current_local_best = INT32_MAX;
 
         for (int i = 0; i < num_colonies; i++) {
 
@@ -155,9 +156,9 @@ void exange_local_best(std::unique_ptr<Route>& local_best_route, int p_id, int n
 */
 int parse_args(int p_id, int argc, char** argv) {
 
-    if (argc >= p_id + 2) {
+    if (argc >= p_id + 3) {
 
-        int num_thread = std::atoi(argv[p_id + 1]);
+        int num_thread = std::atoi(argv[p_id + 2]);
         
         if (num_thread >= 0) {
             omp_set_num_threads(num_thread);
