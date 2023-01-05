@@ -184,16 +184,16 @@ public:
         for (auto& t : *this) t = t * lambda / mu;
     }
 
-    void dropout() {
+    // void dropout() {
 
-        for (auto& t : *this) {
-            if (t == 0) {
-                if ((std::rand() & 0X3) == 0) t = QQ;
-            }
-            else if (std::rand() & 2 == 0) t << 3;
-        }
+    //     for (auto& t : *this) {
+    //         if (t == 0) {
+    //             if ((std::rand() & 0X3) == 0) t = QQ;
+    //         }
+    //         else if ((std::rand() & 2) == 0) t <<= 3;
+    //     }
 
-    }
+    // }
     
     inline static void set_params(int lambda, int mu, int q) {
         Pheromone::lambda = lambda;
@@ -374,7 +374,8 @@ int thread_task(
         {
             if (best_route == nullptr || local_best_route->better(*best_route)) {
                 best_route.reset(new Route(*local_best_route));
-                best_route->print();
+
+                if (PRINT_BEST_IN_THREADS) best_route->print();
             }
         }
     }

@@ -17,7 +17,11 @@ void exange_local_best(std::unique_ptr<Route>& local_best_route, int p_id, int n
 int parse_args(int p_id, int argc, char** argv);
 
 /**
- * @param argv <___, num_processes, num_threads, alpha, beta, lambda, mu, q>
+ * @param argv <___, file_name, num_threads_for_p0, num_threads_for_p1, ...>
+ * 
+ * set -1 to automatically use max number of threads
+ * unset to use DEFAULT_NUM_THREADS
+ * 
 */
 int main(int argc, char** argv) {
 
@@ -28,9 +32,9 @@ int main(int argc, char** argv) {
 
     int num_threads = parse_args(p_id, argc, argv);
 
-    Matrix dis_table("cities/gr17_d.txt");
+    // Matrix dis_table("cities/gr17_d.txt");
     // Matrix dis_table("cities/fri26_d.txt");
-    // Matrix dis_table("cities/dantzig42_d.txt");
+    Matrix dis_table("cities/dantzig42_d.txt");
     // Matrix dis_table("cities/att48_d.txt");
 
     int num_cities = dis_table.length();
@@ -45,17 +49,23 @@ int main(int argc, char** argv) {
 
     double start_time = omp_get_wtime();
     #pragma omp parallel default(none)\
-        shared(local_best_route, num_colonies, dis_table, p_id, num_cities)\
+        shared(local_best_route, num_colonies, dis_table, p_id, num_cities, comm_size)\
         firstprivate(ants, pheromone)
     {
         int t_id = omp_get_thread_num();
         int current_local_best = INT32_MAX;
 
         for (int i = 0; i < num_colonies; i++) {
-            int found_best = thread_task(ants, pheromone, dis_table, local_best_route);
+
+            thread_task(ants, pheromone, dis_table, local_best_route);
 
             // if (found_best < current_local_best) current_local_best = found_best;
-            // if (i % 128 == 0 && current_local_best > local_best_route->get_length()) pheromone.dropout();
+
+            // if (
+            //     i % DROPOUT_INTERVAL == 0
+            //     && current_local_best > local_best_route->get_length()
+            // )
+            //     pheromone.dropout();
 
             #pragma omp master
             if (i % GLOBAL_EXANGE_INTERVAL == 0 || i == num_colonies - 1) {
@@ -64,12 +74,21 @@ int main(int argc, char** argv) {
             }
         }
 
-        #pragma omp critical (print)
-        {
-            // std::printf("pheronome at thread %d\n", omp_get_thread_num());
-            // pheromone.print();
-            // std::printf("---------------------------------------------------\n");
-        }
+        if (PRINT_PHEROROME)
+            for (int i = 0; i < comm_size; i++) {
+
+                if (i == p_id) {
+                    #pragma omp critical (print)
+                    {
+                        std::printf("P%d) pheronome at thread %d\n", p_id, t_id);
+                        pheromone.print();
+                        std::printf("---------------------------------------------------\n");
+                    }
+                }
+
+                #pragma omp master
+                MPI_Barrier(MPI_COMM_WORLD);
+            }
 
         #pragma omp barrier
     }
@@ -85,23 +104,19 @@ int main(int argc, char** argv) {
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    // while (MPI_Barrier(MPI_COMM_WORLD) != MPI_SUCCESS) {
-
-    //     std::printf("not success in p%d", p_id);
-
-    // }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if (p_id == 0) {
         // std::printf("P%d) num_threads = %d\n", p_id, num_threads);
-        std::printf("num_ants = %d\n", num_ants);
-        std::printf("num_colonies_per_thread = %d\n", num_colonies);
-        std::printf("alpha = %d, beta = %d\n", ALPHA, BETA);
-        std::printf("lambda = %d, mu = %d, ", LAMBDA, MU);
-        std::printf("Q = %ld\n", Q);
-        std::printf("spent_time = %lf\n", spent_time);
-        std::printf("best route length: \n");
+        std::fprintf(stdout, "num_ants = %d\n", num_ants);
+        std::fprintf(stdout, "num_colonies_per_thread = %d\n", num_colonies);
+        std::fprintf(stdout, "alpha = %d, beta = %d\n", ALPHA, BETA);
+        std::fprintf(stdout, "lambda = %d, mu = %d, ", LAMBDA, MU);
+        std::fprintf(stdout, "Q = %ld\n", Q);
+        std::fprintf(stdout, "spent_time = %lf\n", spent_time);
+        std::fprintf(stdout, "best route length: ");
         local_best_route->print();
-        std::printf("\n");
+        std::fprintf(stdout, "\n");
     }
 
     MPI_Finalize();
@@ -118,20 +133,21 @@ void exange_local_best(std::unique_ptr<Route>& local_best_route, int p_id, int n
 
     MPI_Bcast(local_best_route->data(), num_cities, MPI_INT32_T, recv_buff[1], MPI_COMM_WORLD);
 
-    if (p_id == recv_buff[1] && recv_buff[0] < local_best_route->get_length()) {
+    local_best_route->update_length(recv_buff[0]);
 
-        local_best_route->update_length(recv_buff[0]);
+    if (p_id == recv_buff[1]) {
 
         std::printf("P%d) new best route found: ", p_id);
         local_best_route->print();
         std::printf("\n");
+
     }
 
     return;
 }
 
 /**
- * @param argv <___, num_threads_for_p0, num_threads_for_p1, ...>
+ * @param argv <___, file_name, num_threads_for_p0, num_threads_for_p1, ...>
  * 
  * set -1 to automatically use max number of threads
  * unset to use DEFAULT_NUM_THREADS
