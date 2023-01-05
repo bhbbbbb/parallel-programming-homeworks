@@ -7,17 +7,21 @@
 #include <memory>
 #include <omp.h>
 #include <climits>
+// #include <mpi.h>
+
+using WeightType = unsigned long;
 
 constexpr int NUM_THREADS = 4;
 constexpr int ALPHA = 1;
 constexpr int BETA = 1;
-constexpr int LAMBDA = 2;
-constexpr int MU = 3;
-constexpr int NUM_ANTS = 1 << 8;
-constexpr int NUM_COLONIES = 1 << 8;
-constexpr int Q = (1 << (sizeof(int) * 8 - 3)) / NUM_ANTS;
+constexpr int LAMBDA = 1;
+constexpr int NUM_ANTS = 1 << 7;
+constexpr int MU = 4;
+constexpr int NUM_COLONIES = 1 << 18;
+constexpr int QPOW = (sizeof(int) * 8 + 2);
+constexpr WeightType Q = (1UL << QPOW);
+constexpr WeightType QQ = Q >> 8;
 
-constexpr int PRINT_TAU_INTERVAL = 1000;
 
 class Matrix {
 
@@ -61,18 +65,18 @@ public:
         return;
     }
 
-    Matrix(int _n, int init_value): n{_n}, data(_n * (_n - 1) / 2, init_value), probes(_n) {
+    Matrix(int _n, WeightType init_value): n{_n}, data(_n * (_n - 1) / 2, init_value), probes(_n) {
 
         for (int i = 0; i < n ; i++) probes[i] = probe(i, n);
 
     }
 
-    inline int& at(int i, int j) {
+    inline WeightType& at(int i, int j) {
         if (i > j) std::swap(i, j);
         return data[probes[i] + j - i - 1];
     }
 
-    inline const int& at(int i, int j) const {
+    inline const WeightType& at(int i, int j) const {
         if (i > j) std::swap(i, j);
         return data[probes[i] + j - i - 1];
     }
@@ -97,7 +101,7 @@ public:
     void print() const {
 
         for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) std::printf("%3d ", i == j ? 0 : at(i, j));
+            for (int j = 0; j < n; j++) std::printf("%3ld ", i == j ? 0 : at(i, j));
 
             std::printf("\n");
         }
@@ -110,7 +114,7 @@ private:
     }
 
     int n;
-    std::vector<int> data;
+    std::vector<WeightType> data;
     std::vector<int> probes;
 };
 
@@ -137,7 +141,6 @@ public:
         length = 0;
     }
 
-    // TODO: early stopping update_length
     int update_length(const Matrix& dis_table) {
         
         length = dis_table.at(route[0], route[route.size() - 1]);
@@ -155,7 +158,7 @@ public:
     void print() const {
 
         std::printf("L = %d\n", length);
-        for (int c : route) std::printf("%d, ", c);
+        for (int c : route) std::printf("%2d, ", c);
         std::printf("\n");
 
     }
@@ -171,7 +174,7 @@ class Pheromone : public Matrix {
 
 public:
 
-    Pheromone(int _n, int init_value) : Matrix(_n, init_value) {}
+    Pheromone(int _n, WeightType init_value) : Matrix(_n, init_value) {}
 
     void update(const Route& route, const Matrix& dis_table) {
 
@@ -184,6 +187,17 @@ public:
 
     void evaporate() {
         for (auto& t : *this) t = t * lambda / mu;
+    }
+
+    void dropout() {
+
+        for (auto& t : *this) {
+            if (t == 0) {
+                if ((std::rand() & 0X3) == 0) t = QQ;
+            }
+            else if (std::rand() & 2 == 0) t << 3;
+        }
+
     }
     
     inline static void set_params(int lambda, int mu, int q) {
@@ -200,7 +214,7 @@ public:
             for (int j = 0; j < length(); j++) {
                 int count = 0;
                 if (i != j) {
-                    int v = at(i, j);
+                    auto v = at(i, j);
 
                     while (v > 0) {
                         v >>= 1;
@@ -221,7 +235,7 @@ private:
      * tau <- (lambda / mu) * tau;
     */
     static int lambda, mu;
-    static int q;
+    static WeightType q;
 };
 
 
@@ -241,15 +255,6 @@ public:
             visited.resize(visited.capacity());
         }
 
-        // #print
-        // if (pheromone.at(0, 1) != 1) {
-        //     std::printf("printing route...\n");
-        //     route.print();
-        //     std::printf("printint vistied...\n");
-        //     for (bool b : visited) std::printf("%d", b);
-        //     std::printf("\n");
-        // }
-
 
         // init initial city
         route[0] = std::rand() % dis_table.length();
@@ -258,10 +263,6 @@ public:
         for (int i = 1; i < dis_table.length(); i++) {
 
             int next = random_select_next(pheromone, dis_table);
-
-            // #print
-            // for (bool b : visited) std::printf("%d", b);
-            // std::printf("\n");
 
             visited[next] = true;
 
@@ -288,7 +289,7 @@ private:
 
         auto cumulative_weights = get_residual_cities(pheromone, dis_table);
 
-        int max_value = 0;
+        WeightType max_value = 0;
         for (
             auto b = cumulative_weights.rbegin(), e = cumulative_weights.rend();
             b != e;
@@ -301,7 +302,7 @@ private:
         
         assert(max_value != 0);
 
-        int rand_val = std::rand() % max_value;
+        WeightType rand_val = std::rand() % max_value;
 
 
         int i;
@@ -313,29 +314,27 @@ private:
         return i;
     }
 
-    inline std::vector<int> get_residual_cities(
+    inline std::vector<WeightType> get_residual_cities(
         const Pheromone& pheromone, const Matrix& dis_table) const {
 
         assert(route_size > 0);
 
-        std::vector<int> cumulative_weights(dis_table.length(), 0);
-        int last = 0;
+        std::vector<WeightType> cumulative_weights(dis_table.length(), 0);
+        WeightType last = 0;
 
         for (int i = 0; i < dis_table.length(); i++) {
 
             if (visited[i]) continue;
 
-            int w = std::pow(pheromone.at(route[route_size - 1], i), alpha);
+            WeightType w = std::pow(pheromone.at(route[route_size - 1], i), alpha);
 
             w /= std::pow(dis_table.at(route[route_size - 1], i), beta);
 
-            last += ++w; // give an offset in case w == 0
+            if (w <= 0) w = 1;
+
+            last += w;
             cumulative_weights[i] = last;
         }
-
-        // #print
-        // for (const auto w : cumulative_weights) std::printf("%d, ", w);
-        // std::printf("\n");
 
         return cumulative_weights;
     }
@@ -356,15 +355,11 @@ int thread_task(
 
 
     const Route* local_best_route = nullptr;
-    int local_best_length = 0;
-
+    int found_best = 0;
 
     for (auto& ant : ants) {
 
         const auto& route = ant.traverse(pheromone, dis_table);
-
-        //#print
-        // route.print(); ///
 
         if (!local_best_route) {
             local_best_route = &route;
@@ -374,18 +369,17 @@ int thread_task(
         else if (route.better(*local_best_route)) {
 
             local_best_route = &route;
-            local_best_length = route.get_length();
+            found_best = route.get_length();
         }
 
+    }
 
-        if (best_route == nullptr || local_best_route->better(*best_route)) {
-            #pragma omp critical (exchange)
-            {
-                if (best_route == nullptr || local_best_route->better(*best_route)) {
-                    best_route.reset(new Route(*local_best_route));
-                    std::printf("new best found:");
-                    best_route->print();
-                }
+    if (best_route == nullptr || local_best_route->better(*best_route)) {
+        #pragma omp critical (exchange)
+        {
+            if (best_route == nullptr || local_best_route->better(*best_route)) {
+                best_route.reset(new Route(*local_best_route));
+                best_route->print();
             }
         }
     }
@@ -397,12 +391,12 @@ int thread_task(
         pheromone.update(ant.get_route(), dis_table);
 
     }
-    return local_best_length;
+    return found_best;
 }
 
 int Pheromone::lambda = LAMBDA;
 int Pheromone::mu = MU;
-int Pheromone::q = Q;
+WeightType Pheromone::q = Q;
 int Ant::alpha = ALPHA;
 int Ant::beta = BETA;
 
@@ -426,10 +420,17 @@ void parse_args(int argc, char** argv) {
 */
 int main(int argc, char** argv) {
 
+    // int comm_size, p_id;
+    // MPI_Init(&argc, &argv);
+    // MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+    // MPI_Comm_rank(MPI_COMM_WORLD, &p_id);
+
     parse_args(argc, argv);
 
-    Matrix dis_table("cities/dantzig42_d.txt");
-    dis_table.print();
+    // Matrix dis_table("cities/gr17_d.txt");
+    // Matrix dis_table("cities/fri26_d.txt");
+    // Matrix dis_table("cities/dantzig42_d.txt");
+    Matrix dis_table("cities/att48_d.txt");
 
     int num_ants = NUM_ANTS;
     int num_colonies = NUM_COLONIES;
@@ -445,11 +446,12 @@ int main(int argc, char** argv) {
         shared(local_best_route, num_colonies, dis_table) firstprivate(ants, pheromone)
     {
         int t_id = omp_get_thread_num();
-        #pragma omp for
-        for (int i = 0; i < num_colonies; i++) {
-            int thread_best_length = thread_task(ants, pheromone, dis_table, local_best_route);
-            // if (i % 10 == 0)
-            //     std::printf("T%d) best_length = %d\n", t_id, thread_best_length);
+        int current_local_best = INT32_MAX;
+        // #pragma omp for
+        for (int i = 0; i < num_colonies / omp_get_num_threads(); i++) {
+            int found_best = thread_task(ants, pheromone, dis_table, local_best_route);
+            if (found_best < current_local_best) current_local_best = found_best;
+            if (i % 128 == 0 && current_local_best > local_best_route->get_length()) pheromone.dropout();
         }
 
         #pragma omp critical (print)
@@ -458,6 +460,8 @@ int main(int argc, char** argv) {
             pheromone.print();
             std::printf("---------------------------------------------------\n");
         }
+
+        #pragma omp barrier
     }
     double spent_time = omp_get_wtime() - start_time;
 
@@ -467,7 +471,10 @@ int main(int argc, char** argv) {
     std::printf("spent_time = %lf\n", spent_time);
     std::printf("best route length: %d\n", local_best_route->get_length());
     local_best_route->print();
+    local_best_route.release();
     std::printf("\n");
+
+    // MPI_Finalize();
 
     return 0;
 }
