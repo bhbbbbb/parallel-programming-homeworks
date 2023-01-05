@@ -7,20 +7,21 @@
 #include <memory>
 #include <omp.h>
 #include <climits>
-// #include <mpi.h>
+#include <mpi.h>
 
 using WeightType = unsigned long;
 
-constexpr int NUM_THREADS = 4;
+constexpr int NUM_THREADS = 2;
 constexpr int ALPHA = 1;
 constexpr int BETA = 1;
 constexpr int LAMBDA = 1;
 constexpr int NUM_ANTS = 1 << 7;
 constexpr int MU = 4;
-constexpr int NUM_COLONIES = 1 << 18;
+constexpr int NUM_COLONIES = 1 << 10;
 constexpr int QPOW = (sizeof(int) * 8 + 2);
 constexpr WeightType Q = (1UL << QPOW);
 constexpr WeightType QQ = Q >> 8;
+constexpr int GLOBAL_EXANGE_INTERVAL = NUM_COLONIES >> 4;
 
 
 class Matrix {
@@ -149,6 +150,14 @@ public:
             length += dis_table.at(route[i], route[i + 1]);
         
         return length;
+    }
+
+    inline int update_length(int new_length) {
+        return length = new_length;
+    }
+
+    auto data() {
+        return route.data();
     }
 
     int get_length() const {
@@ -394,6 +403,27 @@ int thread_task(
     return found_best;
 }
 
+void exange_local_best(std::unique_ptr<Route>& local_best_route, int p_id, int num_cities) {
+
+    int local_send_buff[2] = {local_best_route->get_length(), p_id};
+    int recv_buff[2];
+
+    MPI_Allreduce(local_send_buff, recv_buff, 1, MPI_2INT, MPI_MINLOC, MPI_COMM_WORLD);
+
+    MPI_Bcast(local_best_route->data(), num_cities, MPI_INT32_T, recv_buff[1], MPI_COMM_WORLD);
+
+    if (p_id == recv_buff[1] && recv_buff[0] < local_best_route->get_length()) {
+
+        local_best_route->update_length(recv_buff[0]);
+
+        std::printf("P%d) new best route found: ", p_id);
+        local_best_route->print();
+        std::printf("\n");
+    }
+
+    return;
+}
+
 int Pheromone::lambda = LAMBDA;
 int Pheromone::mu = MU;
 WeightType Pheromone::q = Q;
@@ -420,61 +450,78 @@ void parse_args(int argc, char** argv) {
 */
 int main(int argc, char** argv) {
 
-    // int comm_size, p_id;
-    // MPI_Init(&argc, &argv);
-    // MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
-    // MPI_Comm_rank(MPI_COMM_WORLD, &p_id);
+    int comm_size, p_id;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &p_id);
 
     parse_args(argc, argv);
 
-    // Matrix dis_table("cities/gr17_d.txt");
+    Matrix dis_table("cities/gr17_d.txt");
     // Matrix dis_table("cities/fri26_d.txt");
     // Matrix dis_table("cities/dantzig42_d.txt");
-    Matrix dis_table("cities/att48_d.txt");
+    // Matrix dis_table("cities/att48_d.txt");
 
+    int num_cities = dis_table.length();
     int num_ants = NUM_ANTS;
     int num_colonies = NUM_COLONIES;
 
     // this is the local of processes, global for their threads
     std::unique_ptr<Route> local_best_route;
 
-    std::vector<Ant> ants(num_ants, Ant(dis_table.length()));
-    Pheromone pheromone(dis_table.length(), 1);
+    std::vector<Ant> ants(num_ants, Ant(num_cities));
+    Pheromone pheromone(num_cities, 1);
 
     double start_time = omp_get_wtime();
     #pragma omp parallel default(none)\
-        shared(local_best_route, num_colonies, dis_table) firstprivate(ants, pheromone)
+        shared(local_best_route, num_colonies, dis_table, p_id, num_cities)\
+        firstprivate(ants, pheromone)
     {
         int t_id = omp_get_thread_num();
         int current_local_best = INT32_MAX;
-        // #pragma omp for
-        for (int i = 0; i < num_colonies / omp_get_num_threads(); i++) {
+
+        for (int i = 0; i < num_colonies; i++) {
             int found_best = thread_task(ants, pheromone, dis_table, local_best_route);
-            if (found_best < current_local_best) current_local_best = found_best;
-            if (i % 128 == 0 && current_local_best > local_best_route->get_length()) pheromone.dropout();
+
+            // if (found_best < current_local_best) current_local_best = found_best;
+            // if (i % 128 == 0 && current_local_best > local_best_route->get_length()) pheromone.dropout();
+
+            #pragma omp master
+            if (i % GLOBAL_EXANGE_INTERVAL == 0) {
+                exange_local_best(local_best_route, p_id, num_cities);
+                MPI_Barrier(MPI_COMM_WORLD);
+            }
         }
 
         #pragma omp critical (print)
         {
-            std::printf("pheronome at thread %d\n", omp_get_thread_num());
-            pheromone.print();
-            std::printf("---------------------------------------------------\n");
+            // std::printf("pheronome at thread %d\n", omp_get_thread_num());
+            // pheromone.print();
+            // std::printf("---------------------------------------------------\n");
         }
 
         #pragma omp barrier
     }
     double spent_time = omp_get_wtime() - start_time;
 
-    std::printf("num_threads = %d\n", NUM_THREADS);
-    std::printf("num_ants = %d\n", num_ants);
-    std::printf("num_colonies = %d\n", num_colonies);
-    std::printf("spent_time = %lf\n", spent_time);
-    std::printf("best route length: %d\n", local_best_route->get_length());
-    local_best_route->print();
-    local_best_route.release();
-    std::printf("\n");
+    for (int i = 0; i < comm_size; i++) {
 
-    // MPI_Finalize();
+        if (p_id == i)
+            std::printf("P%d) num_threads = %d\n", p_id, NUM_THREADS);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    if (p_id == 0) {
+        std::printf("num_ants = %d\n", num_ants);
+        std::printf("num_colonies = %d\n", num_colonies);
+        std::printf("spent_time = %lf\n", spent_time);
+        std::printf("best route length: %d\n", local_best_route->get_length());
+        local_best_route->print();
+        std::printf("\n");
+    }
+
+    MPI_Finalize();
 
     return 0;
 }
